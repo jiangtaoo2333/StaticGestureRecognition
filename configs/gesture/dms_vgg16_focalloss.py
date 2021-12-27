@@ -6,27 +6,23 @@ imgTxtTrain = 'train.txt'
 imgDirValid = '/home/jiangtao/dataset/train/megaage_asian'
 imgTxtValid = 'Val.txt'
 
-# 数据增强
-mixup_alpha = 1.0
-
 # 训练用到的数字
 batchSize = 512 
 workers = 32 
 imgSize = 128 
-numEpoches = 200
+numEpoches = 100
 validInterval = 2 
 savingEpoches = 10 
 
 # 模型
-modelName = 'multi_out_13_20211008 '
+modelName = 'multi_out_13_20211008'
 
 # 损失
-lossName = 'crossEntroy'
+lossName = 'focalLoss'
 
 # 优化器参数设定
 momentum = 0.9
 weightdecay = 0.0005
-scheduler = 'cosineAnnealing'
 
 # 预训练模型
 pretrained_type = 'pretrained'

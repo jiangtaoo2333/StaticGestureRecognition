@@ -15,10 +15,10 @@ validInterval = 2
 savingEpoches = 10 
 
 # 模型
-modelName = 'multi_out_13_20211008 '
+modelName = 'multi_out_13_20211008'
 
 # 损失
-lossName = 'focalLoss'
+lossName = 'crossEntroy'
 
 # 优化器参数设定
 momentum = 0.9
