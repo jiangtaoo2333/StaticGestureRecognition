@@ -3,7 +3,7 @@
 * @Author       : jiangtao
 * @Date         : 2021-12-27 09:49:53
 * @Email        : jiangtaoo2333@163.com
-* @LastEditTime : 2021-12-27 15:09:11
+* @LastEditTime : 2021-12-28 09:09:19
 * @Description  : 性别数据集
 '''
 import copy
@@ -29,6 +29,7 @@ from torch.utils.data.dataset import Dataset as torchDataset
 from torchvision import transforms
 from torchvision.transforms import functional as F
 from tqdm import tqdm
+import json
 
 def getage(xmlFile):
 
@@ -70,34 +71,53 @@ def getgender(xmlFile):
 
     return gender
 
-def getbox(xmlFile):
+def getboxes(xmlFile):
 
     if not os.path.exists(xmlFile):
         return np.zeros((1,4))
         
-    dom = xml.dom.minidom.parse(xmlFile)
+    dom = xml.dom.minidom.parse(xmlFile)  
     root = dom.documentElement
 
-    itemlist = root.getElementsByTagName('xmin')
-    minX = int(float(itemlist[0].firstChild.data))
+    nBoxes = len(root.getElementsByTagName('xmin'))
 
-    itemlist = root.getElementsByTagName('ymin')
-    minY = int(float(itemlist[0].firstChild.data))
+    boxes = np.zeros((nBoxes,4))
 
-    itemlist = root.getElementsByTagName('xmax')
-    maxX = int(float(itemlist[0].firstChild.data))
+    for iBox in range(nBoxes):
 
-    itemlist = root.getElementsByTagName('ymax')
-    maxY = int(float(itemlist[0].firstChild.data))
+        itemlist = root.getElementsByTagName('xmin')
+        minX = int(float(itemlist[iBox].firstChild.data))
 
-    boxes = np.zeros((1,4))
+        itemlist = root.getElementsByTagName('ymin')
+        minY = int(float(itemlist[iBox].firstChild.data))
 
-    boxes[0][0] = minX
-    boxes[0][1] = minY
-    boxes[0][2] = maxX
-    boxes[0][3] = maxY
+        itemlist = root.getElementsByTagName('xmax')
+        maxX = int(float(itemlist[iBox].firstChild.data))
+
+        itemlist = root.getElementsByTagName('ymax')
+        maxY = int(float(itemlist[iBox].firstChild.data))
+
+        boxes[iBox][0] = minX
+        boxes[iBox][1] = minY
+        boxes[iBox][2] = maxX
+        boxes[iBox][3] = maxY
 
     return boxes
+
+def getbox(json_file):
+    if json_file.endswith('.json'):
+        with open(json_file,'rb') as f:
+            data = json.load(f)
+        points = data['shapes'][0]['points']
+        x,y,w,h = points[0],points[1],points[2]-points[0],points[3]-points[1]
+    elif json_file.endswith('.xml'):
+        boxes = getboxes(json_file)
+        box = boxes[0]
+        x,y,w,h = box[0],box[1],box[2]-box[0],box[3]-box[1]
+    else:
+        print(json_file)
+        sys.exit()
+    return [x,y,w,h]
 
 def randomAug_boxV2(img,box,scale):
 
@@ -191,17 +211,17 @@ class DatasetGesture(torchDataset):
         self.imgPathList = []
         self.xmlPathList = []
         self.labelList = []
-        for line in tqdm(lines[0:1000]):
+        for line in tqdm(lines):
             imgFile = imgDir + line.strip().split(' ')[0]
             xmlFile = osp.splitext(imgFile)[0] + '.xml'
+            jsonFile = osp.splitext(imgFile)[0] + '.json'
             label = int(line.strip().split(' ')[1])
             self.imgPathList.append(imgFile)
-            self.xmlPathList.append(xmlFile)
+            if osp.exists(xmlFile):
+                self.xmlPathList.append(xmlFile)
+            if osp.exists(jsonFile):
+                self.xmlPathList.append(jsonFile)
             self.labelList.append(label)
-
-        print(self.imgPathList[0:5])
-        print(self.xmlPathList[0:5])
-        print(self.labelList[0:5])
 
         assert len(self.imgPathList) == len(self.xmlPathList)
 
@@ -215,14 +235,21 @@ class DatasetGesture(torchDataset):
     def __getitem__(self,index):
 
         img = cv2.imread(self.imgPathList[index],0)
-        box = getbox(self.xmlPathList[index])
-        gesture = self.labelPathList[index]
+        box = getbox(self.xmlPathList[index]) #[x y w h]
+        gesture = self.labelList[index]
+        
 
         # get new img and new box
+        box[2] = box[0] + box[2]
+        box[3] = box[1] + box[3]
+        box = [box] #[[x1,y1,x2,y2]]
         img_new, box_new = randomAug_box(img,box)
         ret = randomAug_boxV2(img_new,box_new,0.15)
 
         if(ret[0] == False):
+            print('box_ori:',box_ori)
+            print('box:',box)
+            print('box_new:',box_new)
             sys.exit('{} have problem:{}'.format(self.imgPathList[index],ret[1]))
         else:
             cropped_im = ret[1]
@@ -238,18 +265,21 @@ class DatasetGestureSim(DatasetGesture):
     return ori PIL image for augmix
     '''
     def __init__(self, imgDir, imgTxt, size=128, imgChannel=1, isTrain='train'):
-        super(DatasetDMSGenderSim, self).__init__(imgDir, imgTxt, size=size,isTrain=isTrain)
+        super(DatasetGestureSim, self).__init__(imgDir, imgTxt, size=size,isTrain=isTrain)
 
     def __len__(self):
         return len(self.imgPathList)
 
     def __getitem__(self,index):
 
-        img = cv2.imread(self.imgPathList[index],0)
+        img = cv2.imread(self.imgPathList[index],1)
         box = getbox(self.xmlPathList[index])
-        gesture = self.labelPathList[index]
+        gesture = self.labelList[index]
 
         # get new img and new box
+        box[2] = box[0] + box[2]
+        box[3] = box[1] + box[3]
+        box = [box] #[[x1,y1,x2,y2]]
         img_new, box_new = randomAug_box(img,box)
         ret = randomAug_boxV2(img_new,box_new,0.15)
 

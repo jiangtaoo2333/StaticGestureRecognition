@@ -3,7 +3,7 @@
 * @Author       : jiangtao
 * @Date         : 2021-10-08 10:31:28
 * @Email        : jiangtaoo2333@163.com
-* @LastEditTime : 2021-12-27 15:10:22
+* @LastEditTime : 2021-12-27 16:13:56
 * @Description  : 性别训练接口
 '''
 #!/usr/bin/env python
@@ -37,10 +37,10 @@ from src.loss._l2_loss import *
 from src.scheduler import GradualWarmupScheduler
 from src.utils.useful import *
 from tensorboardX import SummaryWriter
-from timm import create_model
+import timm
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
 from torch.utils.data import DataLoader
-
+from thop import profile,clever_format
 
 def get_args():
 
@@ -147,14 +147,17 @@ def train(gpu,args):
                                                     pin_memory=True)
 
     # construct model
-    model = timm.create_model(cfg.modename, pretrained=cfg.pretrained, num_classes=cfg.numClasses,
-                                in_chans=cfg.channels)
-
+    model = timm.create_model(cfg.modelName, pretrained=cfg.pretrained, num_classes=cfg.numClasses,
+                                in_chans=cfg.channels).cuda()
+    input = torch.randn(1, 1, 128, 128).cuda()
+    flops, params = profile(model, inputs=(input, ))
+    flops, params = clever_format([flops, params], "%.3f")
+    print('flops: {} params: {}'.format(flops,params))
     ###############################################################
     # 设置需要训练的参数
-    setUpTrainingBrach(model,cfg)
-    setUpbias(model,cfg)
-    # model.train()
+    # setUpTrainingBrach(model,cfg)
+    # setUpbias(model,cfg)
+    model.train()
     ###############################################################
 
 
@@ -189,9 +192,9 @@ def train(gpu,args):
     epochBest = 0
     # 开始训练
     for epoch in range(1,cfg.numEpoches+1):
-        
+
         #开始训练
-        setUpTrainingBrach(model,cfg)
+        model.train()
 
         #动态更新学习率
         schedulerUsed = cfg.get('scheduler', 'stepLrWithWarmUp')
@@ -211,7 +214,7 @@ def train(gpu,args):
                 inputs, targets_a, targets_b = map(Variable, (inputs,
                                                       targets_a, targets_b))
                 predict = model(inputs)
-                loss = mixup_criterion(criterion,predict[11],targets_a,targets_b,lam)
+                loss = mixup_criterion(criterion,predict,targets_a,targets_b,lam)
             elif cfg.get('cutmix_alpha',0) > 0 and random.random() > 0.5:
                 imgBatch = batch[0].to(torch.device("cuda:{}".format(gpu))).float()
                 groundtruth = batch[1].to(torch.device("cuda:{}".format(gpu)))
@@ -220,13 +223,13 @@ def train(gpu,args):
                 inputs, targets_a, targets_b = map(Variable, (inputs,
                                                       targets_a, targets_b))
                 predict = model(inputs)
-                loss = mixup_criterion(criterion,predict[11],targets_a,targets_b,lam)
+                loss = mixup_criterion(criterion,predict,targets_a,targets_b,lam)
             elif cfg.get('augmix_alpha',0) > 0:
                 images = batch[0] #[(batchsize,1,128,128)] * 3
                 imgBatch = torch.cat(images, 0).cuda().float() #[(batchsize*3,1,128,128)]
                 groundtruth = batch[1].to(torch.device("cuda:{}".format(gpu)))
                 predict = model(imgBatch)
-                logits_all = predict[11]
+                logits_all = predict
                 logits_clean, logits_aug1, logits_aug2 = torch.split(
                             logits_all, images[0].size(0))
 
@@ -245,7 +248,7 @@ def train(gpu,args):
                 imgBatch = batch[0].to(torch.device("cuda:{}".format(gpu))).float()
                 groundtruth = batch[1].to(torch.device("cuda:{}".format(gpu)))
                 predict = model(imgBatch)
-                loss = criterion(predict[11],groundtruth)
+                loss = criterion(predict,groundtruth)
 
             optimizer.zero_grad()
             loss.backward()
@@ -253,7 +256,7 @@ def train(gpu,args):
             
             # cal accuracy
             correctList = []
-            _, preds = predict[11][0:groundtruth.shape[0]].max(1)
+            _, preds = predict[0:groundtruth.shape[0]].max(1)
             correct = preds.eq(groundtruth.reshape((-1)).long()).sum()
             correct = correct.float() / groundtruth.shape[0]
             correctList.append(correct.item())
@@ -294,12 +297,12 @@ def train(gpu,args):
 
                 predict = model(imgBatch)
 
-                loss = criterion(predict[11],groundtruth)
+                loss = criterion(predict,groundtruth)
 
                 lossAll.append(loss.cpu().detach().numpy())
 
                 # cal accuracy
-                _, preds = predict[11].max(1)
+                _, preds = predict.max(1)
                 correct = preds.eq(groundtruth.reshape((-1)).long()).sum()
                 correct = correct.float() / imgBatch.shape[0]
                 correctList.append(correct.item())

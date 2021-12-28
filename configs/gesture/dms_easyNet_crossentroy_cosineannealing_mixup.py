@@ -18,7 +18,8 @@ savingEpoches = 10
 mixup_alpha = 1.0
 
 # 模型
-modelName = 'vgg16'
+channels = 1
+modelName = 'easyNet'
 pretrained = True
 numClasses = 3
 
