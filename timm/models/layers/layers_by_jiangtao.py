@@ -1898,16 +1898,16 @@ class ageClassify(nn.Module):
         return x
 
 class gestureClassify(nn.Module):
-    def __init__(self):
+    def __init__(self,num_classes=1000):
         super(gestureClassify, self).__init__()
-
+        self.num_classes = num_classes
         layer0 = Conv2dBatchReLU(128, 128, 3, 1)   #16
         layer1 = Conv2dBatchReLU(128, 256, 3, 2)   #8
         layer2 = Conv2dBatchReLU(256, 512, 3, 2)   #4
         layer3 = GlobalAvgPool2d()                 #1
 
         layer4 = FullyConnectLayer(512, 128)
-        layer5 = FullyConnectLayer(128, 26)
+        layer5 = FullyConnectLayer(128, self.num_classes)
 
         self.features = nn.Sequential(
             layer0,

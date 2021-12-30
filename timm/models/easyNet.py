@@ -15,7 +15,7 @@ class easyNet(nn.Module):
         super(easyNet, self).__init__()
 
         self.baseBone = layer.backBone()
-        self.gestureBone = layer.gestureClassify()
+        self.gestureBone = layer.gestureClassify(num_classes)
 
     def forward(self,x):
         
