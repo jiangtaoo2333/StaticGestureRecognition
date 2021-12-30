@@ -3,7 +3,7 @@
 * @Author       : jiangtao
 * @Date         : 2021-10-08 10:31:28
 * @Email        : jiangtaoo2333@163.com
-* @LastEditTime : 2021-12-27 16:13:56
+* @LastEditTime : 2021-12-30 09:10:17
 * @Description  : 性别训练接口
 '''
 #!/usr/bin/env python
@@ -26,21 +26,22 @@ import cv2
 import mmcv
 # from src.network import *
 import src.network as network
+import timm
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 from mmcv import Config
-from src.dataprocess import (AugMixDataset, DatasetGesture,DatasetGestureSim)
+from src.dataprocess import AugMixDataset, DatasetGesture, DatasetGestureSim
 from src.dataprocess.transform import cutmix_data, mixup_criterion, mixup_data
 from src.loss._l2_loss import *
 from src.scheduler import GradualWarmupScheduler
 from src.utils.useful import *
 from tensorboardX import SummaryWriter
-import timm
+from thop import clever_format, profile
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
-from torch.utils.data import DataLoader
-from thop import profile,clever_format
+from torch.utils.data import DataLoader, WeightedRandomSampler
+
 
 def get_args():
 
@@ -106,6 +107,15 @@ def train(gpu,args):
         TrainDataset = DatasetGestureSim(cfg.imgDirTrain, cfg.imgTxtTrain, size=cfg.imgSize, isTrain='train')
         TrainDataset = AugMixDataset(TrainDataset)
 
+    if cfg.get('weightSample',False) == True:
+        weights=[int(label.numpy()) for _, label in TrainDataset]
+        weights = np.array((weights))
+        label_unique,counts = np.unique(weights,return_counts=True)
+        class_weights = [sum(counts) / c for c in counts]
+        example_weights = [class_weights[int(label.numpy())] for _, label in TrainDataset]
+        sampler = WeightedRandomSampler(example_weights,len(TrainDataset))
+        shuffle = False
+
     if True == args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(
             TrainDataset,
@@ -132,7 +142,7 @@ def train(gpu,args):
                                                     num_workers=0,\
                                                     pin_memory=True,
                                                     sampler=valid_sampler)   # note that we're passing the collate function here
-
+    
     else:
         trainDataLoader = torch.utils.data.DataLoader(dataset=TrainDataset,
                                             batch_size=cfg.batchSize,
@@ -141,10 +151,10 @@ def train(gpu,args):
                                             pin_memory=True)
 
         validDataLoader = torch.utils.data.DataLoader(dataset=testDataset,
-                                                    batch_size=cfg.batchSize,
-                                                    shuffle=True,
-                                                    num_workers=cfg.workers,
-                                                    pin_memory=True)
+                                            batch_size=cfg.batchSize,
+                                            shuffle=True,
+                                            num_workers=cfg.workers,
+                                            pin_memory=True)
 
     # construct model
     model = timm.create_model(cfg.modelName, pretrained=cfg.pretrained, num_classes=cfg.numClasses,
